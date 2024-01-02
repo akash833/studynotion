@@ -204,7 +204,7 @@ exports.loginUser = async (req, res) => {
     console.log('token', token);
 
     // Set the 'AccessToken' cookie in the response
-    res.cookie('AccessToken', token, {
+    res.cookie('token', token, {
       expires: new Date(Date.now() + 3*24*60*60*1000),
       httpOnly: true, // This ensures that the cookie is only accessible on the server side
     });
