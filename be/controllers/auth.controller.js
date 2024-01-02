@@ -1,8 +1,11 @@
 const otpGenerator = require("otp-generator");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 const User = require("../models/user.model");
 const OTP = require("../models/otp");
+const Profile = require("../models/profile.model");
+const mailSender = require("../utils/mailSender");
 
 require("dotenv").config();
 
@@ -102,9 +105,13 @@ exports.signupUser = async (req, res) => {
     }
 
     // find most recent otp and validate it
-    const recentOtp = OTP.findOne({ email });
-
-    if(recentOtp.otp !== otp){
+    const recentOtp = await OTP.findOne({ email });
+    if (recentOtp.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP Not Found",
+      });
+    } else if (recentOtp.otp !== Number(otp)) {
       return res.status(400).json({
         success: false,
         message: "OTP is not valid",
@@ -114,6 +121,15 @@ exports.signupUser = async (req, res) => {
     // hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // create the profile details with user creation
+    const profileDetails = await Profile.create({
+      profession: null,
+      dob: null,
+      gender: null,
+      About: null,
+      phoneNo: phoneNo
+    })
+
     // create entity in the db
     const newUser = await User.create({
       firstName,
@@ -122,6 +138,8 @@ exports.signupUser = async (req, res) => {
       phoneNo,
       password: hashedPassword,
       accountType,
+      additionalDetails: profileDetails._id,
+      image: `https://api.dicebear.com/7.x/initials/svg?seed=${firstName} ${lastName}`
     });
 
     return res.status(201).json({
@@ -141,9 +159,18 @@ exports.signupUser = async (req, res) => {
 // login
 exports.loginUser = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, accountType } = req.body;
 
-    const user = await User.findOne({ email, role });
+    // validate the field
+    if (!email || !password || !accountType) {
+      return res.status(403).json({
+        success: false,
+        message: "All field required",
+      });
+    }
+
+    // check user exist or not
+    const user = await User.findOne({ email, accountType }).populate("additionalDetails");
 
     if (!user) {
       return res.status(403).json({
@@ -152,6 +179,7 @@ exports.loginUser = async (req, res) => {
       });
     }
 
+    // match the password
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
@@ -161,10 +189,30 @@ exports.loginUser = async (req, res) => {
       });
     }
 
+    // generate the jwt token
+    const payload = {
+      email,
+      id : user._id,
+      role : user.accountType
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: '2h', // 2 hours
+    });
+    user.token = token;
+    user.password = undefined;
+    console.log('token', token);
+
+    // Set the 'AccessToken' cookie in the response
+    res.cookie('AccessToken', token, {
+      expires: new Date(Date.now() + 3*24*60*60*1000),
+      httpOnly: true, // This ensures that the cookie is only accessible on the server side
+    });
+
     return res.status(200).json({
       success: true,
       data: user,
-      message: "User login successfully",
+      message: 'User login successfully',
     });
   } catch (err) {
     console.error(err);
@@ -199,6 +247,10 @@ exports.changePassword = async (req, res) => {
       },
       { new: true }
     );
+
+    if(updatedUser){
+      mailSender(email,"Change Password",`<div>Password changed successfully</div>`);
+    }
 
     return res.status(201).json({
       success: true,

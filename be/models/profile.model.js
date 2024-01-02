@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const Profile = mongoose.Schema({
+const ProfileSchema = mongoose.Schema({
   profession: {
     type: String,
   },
@@ -21,4 +21,4 @@ const Profile = mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("Profile", Profile);
+module.exports = mongoose.model("Profile", ProfileSchema);
